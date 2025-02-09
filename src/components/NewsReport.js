@@ -1,27 +1,18 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import {
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell
+  BarChart, Bar, LineChart, Line, XAxis, YAxis,
+  CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from "recharts";
-import { RefreshCw, Download } from "lucide-react";
-
-const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884d8"];
+import { RefreshCw, Download, AlertCircle } from "lucide-react";
 
 const NewsReport = () => {
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [errors, setErrors] = useState({
+    articles: null,
+    views: null,
+    general: null
+  });
   const [timeRange, setTimeRange] = useState("7d");
   const [reportData, setReportData] = useState({
     categoryViews: [],
@@ -30,27 +21,23 @@ const NewsReport = () => {
     engagement: []
   });
 
-  useEffect(() => {
-    fetchReportData();
-  }, [timeRange]);
+  const getDateRange = () => {
+    const timeRanges = {
+      "7d": 7,
+      "30d": 30,
+      "90d": 90
+    };
+    const daysToFetch = timeRanges[timeRange] || 7;
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - daysToFetch);
+    return startDate.toISOString();
+  };
 
-  const fetchReportData = async () => {
+  const fetchArticlesData = async () => {
     try {
-      setLoading(true);
-      setError(null);
+      const startDate = getDateRange();
 
-      const timeRanges = {
-        "7d": 7,
-        "30d": 30,
-        "90d": 90
-      };
-
-      const daysToFetch = timeRanges[timeRange] || 7;
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - daysToFetch);
-
-      // Fetch articles with their views
-      const { data: articles, error: articlesError } = await supabase
+      const { data, error } = await supabase
         .from("articles")
         .select(`
           id,
@@ -58,15 +45,39 @@ const NewsReport = () => {
           category,
           created_at,
           views,
-          page_views(created_at)
+          page_views (
+            created_at
+          )
         `)
-        .gte("created_at", startDate.toISOString());
+        .gte("created_at", startDate);
 
-      if (articlesError) throw articlesError;
+      if (error) throw error;
+      if (!data) return null;
 
+      return data;
+    } catch (error) {
+      console.error("Error fetching articles:", error);
+      setErrors(prev => ({ ...prev, articles: "Failed to load articles data" }));
+      return null;
+    }
+  };
+
+  const processArticlesData = (articles) => {
+    if (!articles || !articles.length) {
+      return {
+        categoryViews: [],
+        topArticles: [],
+        viewsTrend: [],
+        engagement: []
+      };
+    }
+
+    try {
       // Process category views
       const categoryViews = articles.reduce((acc, article) => {
-        acc[article.category] = (acc[article.category] || 0) + (article.views || 0);
+        if (article.category) {
+          acc[article.category] = (acc[article.category] || 0) + (article.views || 0);
+        }
         return acc;
       }, {});
 
@@ -79,34 +90,34 @@ const NewsReport = () => {
 
       // Process top articles
       const topArticles = articles
+        .filter(article => article.title && article.views)
         .sort((a, b) => (b.views || 0) - (a.views || 0))
         .slice(0, 10)
         .map(article => ({
           title: article.title,
           views: article.views || 0,
-          category: article.category
+          category: article.category || 'Uncategorized'
         }));
 
       // Process views trend
-      const viewsTrend = articles.reduce((acc, article) => {
-        const date = new Date(article.created_at).toLocaleDateString();
-        acc[date] = (acc[date] || 0) + (article.views || 0);
+      const viewsByDate = articles.reduce((acc, article) => {
+        if (article.created_at) {
+          const date = new Date(article.created_at).toLocaleDateString();
+          acc[date] = (acc[date] || 0) + (article.views || 0);
+        }
         return acc;
       }, {});
 
-      const viewsTrendData = Object.entries(viewsTrend).map(([date, views]) => ({
-        date,
-        views
-      }));
+      const viewsTrendData = Object.entries(viewsByDate)
+        .map(([date, views]) => ({ date, views }))
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
 
       // Calculate engagement metrics
+      const totalViews = articles.reduce((sum, article) => sum + (article.views || 0), 0);
       const engagement = [
         {
           metric: "Average Views per Article",
-          value: Math.round(
-            articles.reduce((sum, article) => sum + (article.views || 0), 0) /
-              articles.length
-          )
+          value: articles.length ? Math.round(totalViews / articles.length) : 0
         },
         {
           metric: "Most Active Category",
@@ -118,22 +129,48 @@ const NewsReport = () => {
         }
       ];
 
-      setReportData({
+      return {
         categoryViews: categoryViewsData,
         topArticles,
         viewsTrend: viewsTrendData,
         engagement
-      });
+      };
+    } catch (error) {
+      console.error("Error processing articles data:", error);
+      setErrors(prev => ({ ...prev, general: "Failed to process report data" }));
+      return null;
+    }
+  };
+
+  const fetchReportData = async () => {
+    setLoading(true);
+    setErrors({ articles: null, views: null, general: null });
+
+    try {
+      const articles = await fetchArticlesData();
+      if (!articles) {
+        throw new Error("No articles data available");
+      }
+
+      const processedData = processArticlesData(articles);
+      if (processedData) {
+        setReportData(processedData);
+      }
     } catch (err) {
-      console.error("Error fetching report data:", err);
-      setError("Failed to load report data");
+      console.error("Error in fetchReportData:", err);
+      setErrors(prev => ({ ...prev, general: "Failed to load report data" }));
     } finally {
       setLoading(false);
     }
   };
 
+  useEffect(() => {
+    fetchReportData();
+  }, [timeRange]);
+
   const downloadReport = () => {
-    const reportText = `
+    try {
+      const reportText = `
 News Report - ${new Date().toLocaleDateString()}
 
 Time Range: Last ${timeRange}
@@ -150,15 +187,35 @@ ${reportData.topArticles
 
 Engagement Metrics:
 ${reportData.engagement.map(item => `${item.metric}: ${item.value}`).join("\n")}
-    `.trim();
+`.trim();
 
-    const blob = new Blob([reportText], { type: "text/plain" });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `news-report-${new Date().toLocaleDateString()}.txt`;
-    a.click();
-    window.URL.revokeObjectURL(url);
+      const blob = new Blob([reportText], { type: "text/plain" });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `news-report-${new Date().toLocaleDateString()}.txt`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Error downloading report:", error);
+      setErrors(prev => ({ ...prev, general: "Failed to download report" }));
+    }
+  };
+
+  const ErrorDisplay = ({ errors }) => {
+    const activeErrors = Object.entries(errors).filter(([_, value]) => value);
+    if (activeErrors.length === 0) return null;
+
+    return (
+      <div className="space-y-2">
+        {activeErrors.map(([key, message]) => (
+          <div key={key} className="p-4 bg-red-100 text-red-700 rounded-md flex items-center gap-2">
+            <AlertCircle className="h-5 w-5" />
+            <span>{message}</span>
+          </div>
+        ))}
+      </div>
+    );
   };
 
   if (loading) {
@@ -169,16 +226,8 @@ ${reportData.engagement.map(item => `${item.metric}: ${item.value}`).join("\n")}
     );
   }
 
-  if (error) {
-    return (
-      <div className="p-4 bg-red-100 text-red-700 rounded-md">
-        {error}
-      </div>
-    );
-  }
-
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-6 text-black">
       {/* Header */}
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">News Performance Report</h1>
@@ -209,6 +258,9 @@ ${reportData.engagement.map(item => `${item.metric}: ${item.value}`).join("\n")}
         </div>
       </div>
 
+      {/* Error Display */}
+      <ErrorDisplay errors={errors} />
+      
       {/* Views Trend Chart */}
       <div className="bg-white p-6 rounded-lg shadow-md">
         <h2 className="text-lg font-semibold mb-4">Views Trend</h2>

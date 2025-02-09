@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { Eye, EyeOff, Mail, Lock, AlertCircle,RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
 const Login = () => {
+  const router = useRouter(); 
   const [formData, setFormData] = useState({
     email: "",
     password: ""

@@ -1,9 +1,11 @@
 "use client";
 import React, { useState, useEffect } from "react";
-// import { newsService, categoryService } from "@/lib/api";
+import { newsService, categoryService } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { toast } from "react-hot-toast";
 import { Loader2 } from "lucide-react";
+import { uploadFile, validateFile } from '@/utils/storage';
+import { supabase } from '@/lib/supabase';
 
 const AddNews = () => {
   const router = useRouter();
@@ -24,13 +26,15 @@ const AddNews = () => {
   const [videoPreview, setVideoPreview] = useState(null);
 
   useEffect(() => {
-    // Fetch categories when component mounts
     const fetchCategories = async () => {
       try {
+        console.log('Fetching categories...'); // Debug log
         const categoriesData = await categoryService.getCategories();
+        console.log('Categories received:', categoriesData);
         setCategories(categoriesData);
       } catch (error) {
-        toast.error("Failed to load categories");
+        console.error('Error fetching categories:', error);
+        toast.error('Failed to load categories. Please try again later.');
       }
     };
     fetchCategories();
@@ -56,20 +60,16 @@ const AddNews = () => {
     const file = e.target.files[0];
     if (!file) return;
 
-    // File size validation
-    const maxSize = type === 'image' ? 5 * 1024 * 1024 : 50 * 1024 * 1024; // 5MB for images, 50MB for videos
-    if (file.size > maxSize) {
-      toast.error(`${type.charAt(0).toUpperCase() + type.slice(1)} size too large. Maximum size: ${maxSize / (1024 * 1024)}MB`);
-      return;
-    }
+    // Use the validation function from storage.js
+    const validationResult = validateFile(file, {
+      maxSize: type === 'image' ? 5 * 1024 * 1024 : 50 * 1024 * 1024, // 5MB for images, 50MB for videos
+      allowedTypes: type === 'image' 
+        ? ['image/jpeg', 'image/png', 'image/webp'] 
+        : ['video/mp4', 'video/webm']
+    });
 
-    // File type validation
-    const validTypes = type === 'image' 
-      ? ['image/jpeg', 'image/png', 'image/webp'] 
-      : ['video/mp4', 'video/webm'];
-    
-    if (!validTypes.includes(file.type)) {
-      toast.error(`Invalid ${type} format. Supported formats: ${validTypes.join(', ')}`);
+    if (!validationResult.valid) {
+      toast.error(validationResult.error);
       return;
     }
 
@@ -88,13 +88,6 @@ const AddNews = () => {
       }
     };
     reader.readAsDataURL(file);
-  };
-
-  const uploadFile = async (file, path) => {
-    if (!file) return null;
-    const fileRef = ref(storage, `${path}/${Date.now()}-${file.name}`);
-    const snapshot = await uploadBytes(fileRef, file);
-    return getDownloadURL(snapshot.ref);
   };
 
   const validateForm = () => {
@@ -131,13 +124,12 @@ const AddNews = () => {
     if (!validateForm()) return;
     
     setLoading(true);
+    // Show upload starting toast
+    const uploadToast = toast.loading('Uploading media files...');
     
     try {
-      // Show upload starting toast
-      const uploadToast = toast.loading('Uploading media files...');
-
       // Upload image and video if present
-      const [imageUrl, videoUrl] = await Promise.all([
+      const [imageUpload, videoUpload] = await Promise.all([
         formData.image ? uploadFile(formData.image, 'news/images') : null,
         formData.video ? uploadFile(formData.video, 'news/videos') : null
       ]);
@@ -145,18 +137,27 @@ const AddNews = () => {
       // Update upload toast
       toast.loading('Creating article...', { id: uploadToast });
 
-      // Create article
-      await newsService.createArticle({
-        title: formData.title,
-        content: formData.content,
-        category: formData.category,
-        image_url: imageUrl,
-        video_url: videoUrl,
-        mobile_preview_url: formData.mobilePreview,
-        tags: formData.tags,
-        summary: formData.summary,
-        status: 'pending'
-      });
+      // Create article in Supabase
+      const { data, error } = await supabase
+        .from('articles')
+        .insert([{
+          title: formData.title,
+          content: formData.content,
+          category: formData.category,
+          image_url: imageUpload?.url || null,
+          image_path: imageUpload?.path || null,
+          video_url: videoUpload?.url || null,
+          video_path: videoUpload?.path || null,
+          mobile_preview_url: formData.mobilePreview || imageUpload?.url || null,
+          tags: formData.tags,
+          summary: formData.summary,
+          status: 'pending',
+          created_at: new Date().toISOString()
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
 
       // Success toast
       toast.success('Article created successfully', { id: uploadToast });
@@ -172,7 +173,7 @@ const AddNews = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
+    <div className="max-w-4xl mx-auto p-6 text-black">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Add News Article</h1>
         <button

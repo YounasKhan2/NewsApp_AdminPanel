@@ -1,27 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell
+  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, 
+  Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell
 } from 'recharts';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, AlertCircle } from 'lucide-react';
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
 
 const Analytics = () => {
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [errors, setErrors] = useState({
+    users: null,
+    articles: null,
+    views: null,
+    general: null
+  });
   const [stats, setStats] = useState({
     users: { total: 0, active: 0, new: 0 },
     articles: { total: 0, published: 0, draft: 0 },
@@ -32,56 +26,66 @@ const Analytics = () => {
   const [categoryData, setCategoryData] = useState([]);
   const [engagementData, setEngagementData] = useState([]);
 
-  useEffect(() => {
-    fetchAnalytics();
-  }, [timeRange]);
-
-  const fetchAnalytics = async () => {
+  const fetchUserStats = async () => {
     try {
-      setLoading(true);
-      setError(null);
-
-      // Fetch user statistics
-      const { data: users, error: usersError } = await supabase
+      const { data, error } = await supabase
         .from('users')
         .select('created_at, last_login');
 
-      if (usersError) throw usersError;
+      if (error) throw error;
+      if (!data) return null;
 
       const now = new Date();
       const thirtyDaysAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
 
-      const userStats = {
-        total: users.length,
-        active: users.filter(u => new Date(u.last_login) > thirtyDaysAgo).length,
-        new: users.filter(u => new Date(u.created_at) > thirtyDaysAgo).length
+      return {
+        total: data.length,
+        active: data.filter(u => u.last_login && new Date(u.last_login) > thirtyDaysAgo).length,
+        new: data.filter(u => u.created_at && new Date(u.created_at) > thirtyDaysAgo).length
       };
+    } catch (error) {
+      console.error('Error fetching user stats:', error);
+      setErrors(prev => ({ ...prev, users: 'Failed to load user statistics' }));
+      return null;
+    }
+  };
 
-      // Fetch article statistics
-      const { data: articles, error: articlesError } = await supabase
+  const fetchArticleStats = async () => {
+    try {
+      const { data, error } = await supabase
         .from('articles')
         .select('status, category, created_at, views');
 
-      if (articlesError) throw articlesError;
+      if (error) throw error;
+      if (!data) return { stats: null, categories: [] };
 
-      const articleStats = {
-        total: articles.length,
-        published: articles.filter(a => a.status === 'published').length,
-        draft: articles.filter(a => a.status === 'draft').length
+      const stats = {
+        total: data.length,
+        published: data.filter(a => a.status === 'published').length,
+        draft: data.filter(a => a.status === 'draft').length
       };
 
-      // Process category data
-      const categoryStats = articles.reduce((acc, article) => {
-        acc[article.category] = (acc[article.category] || 0) + 1;
+      const categoryStats = data.reduce((acc, article) => {
+        if (article.category) {
+          acc[article.category] = (acc[article.category] || 0) + 1;
+        }
         return acc;
       }, {});
 
-      const categoryChartData = Object.entries(categoryStats).map(([name, value]) => ({
-        name,
-        value
-      }));
+      const categoryChartData = Object.entries(categoryStats)
+        .map(([name, value]) => ({ name, value }))
+        .filter(item => item.name && item.value > 0);
 
-      // Process views data
+      return { stats, categories: categoryChartData };
+    } catch (error) {
+      console.error('Error fetching article stats:', error);
+      setErrors(prev => ({ ...prev, articles: 'Failed to load article statistics' }));
+      return { stats: null, categories: [] };
+    }
+  };
+
+  const fetchViewsData = async () => {
+    try {
       const timeRanges = {
         '7d': 7,
         '30d': 30,
@@ -89,53 +93,104 @@ const Analytics = () => {
       };
 
       const daysToFetch = timeRanges[timeRange] || 7;
-      const startDate = new Date(now - daysToFetch * 24 * 60 * 60 * 1000);
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - daysToFetch);
 
-      const { data: views, error: viewsError } = await supabase
+      const { data, error } = await supabase
         .from('page_views')
-        .select('created_at')
+        .select('created_at, user_id')
         .gte('created_at', startDate.toISOString());
 
-      if (viewsError) throw viewsError;
+      if (error) throw error;
+      if (!data) return { viewsStats: null, viewsTrend: [] };
 
       // Process views by day
-      const viewsByDay = views.reduce((acc, view) => {
+      const viewsByDay = data.reduce((acc, view) => {
         const date = new Date(view.created_at).toLocaleDateString();
         acc[date] = (acc[date] || 0) + 1;
         return acc;
       }, {});
 
-      const viewsChartData = Object.entries(viewsByDay).map(([date, count]) => ({
-        date,
-        views: count
-      }));
+      const viewsTrend = Object.entries(viewsByDay)
+        .map(([date, views]) => ({ date, views }))
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
 
-      // Calculate engagement metrics
-      const engagementStats = [
+      const viewsStats = {
+        total: data.length,
+        unique: new Set(data.filter(v => v.user_id).map(v => v.user_id)).size
+      };
+
+      return { viewsStats, viewsTrend };
+    } catch (error) {
+      console.error('Error fetching views data:', error);
+      setErrors(prev => ({ ...prev, views: 'Failed to load view statistics' }));
+      return { viewsStats: null, viewsTrend: [] };
+    }
+  };
+
+  const fetchAnalytics = async () => {
+    setLoading(true);
+    setErrors({ users: null, articles: null, views: null, general: null });
+
+    try {
+      const [
+        userStats,
+        { stats: articleStats, categories },
+        { viewsStats, viewsTrend }
+      ] = await Promise.all([
+        fetchUserStats(),
+        fetchArticleStats(),
+        fetchViewsData()
+      ]);
+
+      // Only update states if we have valid data
+      if (userStats) {
+        setStats(prev => ({ ...prev, users: userStats }));
+      }
+      if (articleStats) {
+        setStats(prev => ({ ...prev, articles: articleStats }));
+      }
+      if (viewsStats) {
+        setStats(prev => ({ ...prev, views: viewsStats }));
+      }
+
+      setCategoryData(categories);
+      setViewsData(viewsTrend);
+
+      // Sample engagement data (you might want to replace this with real data)
+      setEngagementData([
         { name: 'Avg. Time on Page', value: 4.5 },
         { name: 'Bounce Rate', value: 35 },
         { name: 'Pages per Session', value: 2.8 },
         { name: 'Return Rate', value: 45 }
-      ];
+      ]);
 
-      setStats({
-        users: userStats,
-        articles: articleStats,
-        views: {
-          total: views.length,
-          unique: new Set(views.map(v => v.user_id)).size
-        }
-      });
-      setCategoryData(categoryChartData);
-      setViewsData(viewsChartData);
-      setEngagementData(engagementStats);
-
-    } catch (err) {
-      console.error('Error fetching analytics:', err);
-      setError('Failed to load analytics data');
+    } catch (error) {
+      console.error('Error in fetchAnalytics:', error);
+      setErrors(prev => ({ ...prev, general: 'Failed to load analytics data' }));
     } finally {
       setLoading(false);
     }
+  };
+
+  useEffect(() => {
+    fetchAnalytics();
+  }, [timeRange]);
+
+  const ErrorDisplay = ({ errors }) => {
+    const activeErrors = Object.entries(errors).filter(([_, value]) => value);
+    if (activeErrors.length === 0) return null;
+
+    return (
+      <div className="space-y-2">
+        {activeErrors.map(([key, message]) => (
+          <div key={key} className="p-4 bg-red-100 text-red-700 rounded-md flex items-center gap-2">
+            <AlertCircle className="h-5 w-5" />
+            <span>{message}</span>
+          </div>
+        ))}
+      </div>
+    );
   };
 
   if (loading) {
@@ -146,16 +201,8 @@ const Analytics = () => {
     );
   }
 
-  if (error) {
-    return (
-      <div className="p-4 bg-red-100 text-red-700 rounded-md">
-        {error}
-      </div>
-    );
-  }
-
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-6 text-black">
       {/* Header */}
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Analytics Dashboard</h1>
@@ -178,6 +225,9 @@ const Analytics = () => {
           </button>
         </div>
       </div>
+
+{/* Error Display */}
+<ErrorDisplay errors={errors} />
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

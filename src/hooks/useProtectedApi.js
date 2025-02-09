@@ -1,7 +1,7 @@
 // hooks/useProtectedApi.js
 import { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase } from '../supabase';
+import { supabase } from '@/lib/supabase';
 
 export const useProtectedApi = () => {
   const { user, signOut } = useAuth();

@@ -1,33 +1,19 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import {
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from "recharts";
 import {
-  Newspaper,
-  Users,
-  TrendingUp,
-  Clock,
-  FileText,
-  AlertCircle,
-  RefreshCw,
-  Eye
+  Newspaper, Users, Eye, Clock, AlertCircle, RefreshCw
 } from "lucide-react";
-
-const NEWS_API_KEY = "67286b996b91454a92ed458e449b50bd";
 
 const Dashboard = () => {
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [errors, setErrors] = useState({
+    supabase: null,
+    newsApi: null,
+    general: null
+  });
   const [stats, setStats] = useState({
     articles: { total: 0, published: 0, draft: 0 },
     users: { total: 0, active: 0 },
@@ -37,84 +23,137 @@ const Dashboard = () => {
   const [trendingNews, setTrendingNews] = useState([]);
   const [viewsData, setViewsData] = useState([]);
 
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
-
-  const fetchDashboardData = async () => {
+  const fetchSupabaseData = async () => {
     try {
-      setLoading(true);
-      setError(null);
+      // Verify Supabase connection first
+      const { data: connectionTest, error: connectionError } = await supabase.from('articles').select('count');
+      if (connectionError) throw connectionError;
 
-      // Fetch article stats from Supabase
+      // Fetch article stats
       const { data: articles, error: articlesError } = await supabase
         .from('articles')
         .select('*')
         .order('created_at', { ascending: false });
-
       if (articlesError) throw articlesError;
 
       // Fetch user stats
       const { data: users, error: usersError } = await supabase
         .from('users')
         .select('*');
-
       if (usersError) throw usersError;
 
-      // Fetch trending news from News API
+      return { articles, users };
+    } catch (error) {
+      console.error('Supabase error:', error);
+      setErrors(prev => ({ ...prev, supabase: 'Database connection failed' }));
+      return { articles: [], users: [] };
+    }
+  };
+
+  const fetchNewsData = async () => {
+    try {
       const response = await fetch(
-        `https://newsapi.org/v2/top-headlines?country=us&apiKey=${NEWS_API_KEY}&pageSize=5`
+        `https://newsapi.org/v2/top-headlines?country=us&apiKey=${process.env.NEXT_PUBLIC_NEWS_API_KEY}&pageSize=5`
       );
-      const newsData = await response.json();
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to fetch news');
+      }
+      
+      return data.articles;
+    } catch (error) {
+      console.error('News API error:', error);
+      setErrors(prev => ({ ...prev, newsApi: 'Failed to load trending news' }));
+      return [];
+    }
+  };
 
-      if (!response.ok) throw new Error(newsData.message);
-
-      // Calculate stats
-      const today = new Date().toISOString().split('T')[0];
-      const articleStats = {
+  const calculateStats = (articles, users) => {
+    const today = new Date().toISOString().split('T')[0];
+    
+    return {
+      articles: {
         total: articles.length,
         published: articles.filter(a => a.status === 'published').length,
         draft: articles.filter(a => a.status === 'draft').length
-      };
-
-      const userStats = {
+      },
+      users: {
         total: users.length,
-        active: users.filter(u => u.last_login && new Date(u.last_login) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)).length
-      };
-
-      const viewStats = {
+        active: users.filter(u => 
+          u.last_login && new Date(u.last_login) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+        ).length
+      },
+      views: {
         total: articles.reduce((sum, article) => sum + (article.views || 0), 0),
-        today: articles.filter(a => a.updated_at?.startsWith(today)).reduce((sum, article) => sum + (article.views || 0), 0)
-      };
-
-      // Process views data for chart
-      const last7Days = Array.from({ length: 7 }, (_, i) => {
-        const date = new Date();
-        date.setDate(date.getDate() - i);
-        return date.toISOString().split('T')[0];
-      }).reverse();
-
-      const viewsChartData = last7Days.map(date => ({
-        date,
-        views: articles
-          .filter(a => a.updated_at?.startsWith(date))
+        today: articles
+          .filter(a => a.updated_at?.startsWith(today))
           .reduce((sum, article) => sum + (article.views || 0), 0)
-      }));
+      }
+    };
+  };
 
-      setStats({
-        articles: articleStats,
-        users: userStats,
-        views: viewStats
-      });
+  const calculateViewsData = (articles) => {
+    const last7Days = Array.from({ length: 7 }, (_, i) => {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      return date.toISOString().split('T')[0];
+    }).reverse();
+
+    return last7Days.map(date => ({
+      date,
+      views: articles
+        .filter(a => a.updated_at?.startsWith(date))
+        .reduce((sum, article) => sum + (article.views || 0), 0)
+    }));
+  };
+
+  const fetchDashboardData = async () => {
+    setLoading(true);
+    setErrors({ supabase: null, newsApi: null, general: null });
+
+    try {
+      // Fetch data in parallel
+      const [{ articles, users }, newsArticles] = await Promise.all([
+        fetchSupabaseData(),
+        fetchNewsData()
+      ]);
+
+      // Process the data
+      const calculatedStats = calculateStats(articles, users);
+      const viewsTrendData = calculateViewsData(articles);
+
+      // Update state
+      setStats(calculatedStats);
       setRecentArticles(articles.slice(0, 5));
-      setTrendingNews(newsData.articles);
-      setViewsData(viewsChartData);
-    } catch (err) {
-      console.error('Error fetching dashboard data:', err);
-      setError('Failed to load dashboard data');
+      setTrendingNews(newsArticles);
+      setViewsData(viewsTrendData);
+    } catch (error) {
+      console.error('Dashboard error:', error);
+      setErrors(prev => ({ ...prev, general: 'Failed to load dashboard data' }));
     } finally {
       setLoading(false);
     }
+  };
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
+  const ErrorDisplay = ({ errors }) => {
+    const activeErrors = Object.entries(errors).filter(([_, value]) => value);
+    if (activeErrors.length === 0) return null;
+
+    return (
+      <div className="space-y-2">
+        {activeErrors.map(([key, message]) => (
+          <div key={key} className="p-4 bg-red-100 text-red-700 rounded-md flex items-center gap-2">
+            <AlertCircle className="h-5 w-5" />
+            <span>{message}</span>
+          </div>
+        ))}
+      </div>
+    );
   };
 
   if (loading) {
@@ -126,7 +165,7 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-6 text-black">
       {/* Header */}
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Dashboard Overview</h1>
@@ -140,12 +179,7 @@ const Dashboard = () => {
       </div>
 
       {/* Error Display */}
-      {error && (
-        <div className="p-4 bg-red-100 text-red-700 rounded-md flex items-center gap-2">
-          <AlertCircle className="h-5 w-5" />
-          <span>{error}</span>
-        </div>
-      )}
+      <ErrorDisplay errors={errors} />
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

@@ -11,17 +11,21 @@ import ManageContent from "@/components/ManageContent";
 import Trending from "@/components/Trending";
 import ProfileSettings from "@/components/ProfileSettings";
 
-export default function MainApp() {
+export default function Home() {
   const [activePage, setActivePage] = useState("dashboard");
   const { user, loading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading && !user) {
-      router.push("/login");
-    }
+    const checkAuth = async () => {
+      if (!loading && !user) {
+        router.replace('/login');
+      }
+    };
+    checkAuth();
   }, [user, loading, router]);
 
+  // Show loading state
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -30,10 +34,12 @@ export default function MainApp() {
     );
   }
 
+  // Return null if no user (will redirect in useEffect)
   if (!user) {
     return null;
   }
 
+  // Render main content if user is authenticated
   const renderContent = () => {
     switch (activePage) {
       case "dashboard":

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from '@/lib/supabase';
 import _ from 'lodash';
 import { 
@@ -27,14 +27,15 @@ const ManageContent = () => {
   const [articleToDelete, setArticleToDelete] = useState(null);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    fetchArticles();
-  }, [filters, sort]);
-
-  const fetchArticles = async () => {
+  // Move fetchArticles outside useEffect and memoize it with useCallback
+  const fetchArticles = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
+      
+      if (!supabase) {
+        throw new Error('Supabase client is not initialized');
+      }
       
       let query = supabase
         .from('articles')
@@ -61,21 +62,37 @@ const ManageContent = () => {
 
       if (fetchError) throw fetchError;
 
+      if (data === null) {
+        setArticles([]);
+        return;
+      }
+
       setArticles(data);
     } catch (err) {
-      setError('Failed to fetch articles');
+      setError(err?.message || 'Failed to fetch articles');
       console.error('Error fetching articles:', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [filters, sort]); // Dependencies for useCallback
 
-  const handleSearch = (e) => {
+  // Use fetchArticles in useEffect
+  useEffect(() => {
+    const controller = new AbortController();
+    
+    fetchArticles();
+
+    return () => {
+      controller.abort();
+    };
+  }, [fetchArticles]); // Now depends on fetchArticles
+
+  const handleSearch = _.debounce((e) => {
     setFilters(prev => ({
       ...prev,
       search: e.target.value
     }));
-  };
+  }, 300);
 
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
@@ -93,6 +110,8 @@ const ManageContent = () => {
   };
 
   const handleDelete = async (id) => {
+    if (!id) return;
+    
     try {
       setError(null);
       const { error: deleteError } = await supabase
@@ -102,16 +121,18 @@ const ManageContent = () => {
 
       if (deleteError) throw deleteError;
 
-      setArticles(articles.filter(article => article.id !== id));
+      setArticles(prevArticles => prevArticles.filter(article => article.id !== id));
       setIsDeleteModalOpen(false);
       setArticleToDelete(null);
     } catch (err) {
-      setError('Failed to delete article');
+      setError(err?.message || 'Failed to delete article');
       console.error('Error deleting article:', err);
     }
   };
 
   const handleBulkAction = async (action) => {
+    if (!selectedArticles.length) return;
+    
     try {
       setError(null);
       const updates = selectedArticles.map(id => {
@@ -130,6 +151,8 @@ const ManageContent = () => {
           case 'unpublish':
             updateData.status = 'draft';
             break;
+          default:
+            throw new Error('Invalid action');
         }
 
         return updateData;
@@ -141,16 +164,16 @@ const ManageContent = () => {
 
       if (updateError) throw updateError;
 
-      fetchArticles();
+      await fetchArticles(); // Use the fetchArticles function to refresh
       setSelectedArticles([]);
     } catch (err) {
-      setError('Failed to perform bulk action');
+      setError(err?.message || 'Failed to perform bulk action');
       console.error('Error performing bulk action:', err);
     }
   };
 
   return (
-    <div className="p-6">
+    <div className="p-6 text-black">
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Manage Content</h1>
@@ -372,7 +395,6 @@ const ManageContent = () => {
           </tbody>
         </table>
       </div>
-
       {/* Delete Confirmation Modal */}
       {isDeleteModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
