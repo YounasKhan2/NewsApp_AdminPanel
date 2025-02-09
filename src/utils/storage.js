@@ -1,8 +1,12 @@
+'use client';
+
 import { supabase } from '../lib/supabase';
 
 export const uploadFile = async (file, folder = 'news') => {
   try {
-    if (!file) throw new Error('No file provided');
+    if (!file) {
+      throw new Error('No file provided');
+    }
 
     // Create unique file name
     const timestamp = new Date().getTime();
@@ -11,67 +15,64 @@ export const uploadFile = async (file, folder = 'news') => {
     const fileName = `${cleanFileName}-${timestamp}.${fileExt}`;
     const filePath = `${folder}/${fileName}`;
 
+    // Determine bucket based on file type
+    const bucket = file.type.startsWith('image/') ? 'news-images' : 'news-videos';
+
     // Upload file
     const { data, error: uploadError } = await supabase.storage
-      .from('news-images')
+      .from(bucket)
       .upload(filePath, file, {
         cacheControl: '3600',
         upsert: false
       });
 
-    if (uploadError) throw uploadError;
+    if (uploadError) {
+      // Instead of throwing, return an error object
+      return { 
+        error: uploadError.message || 'Error uploading file',
+        success: false 
+      };
+    }
 
     // Get public URL
     const { data: { publicUrl } } = supabase.storage
-      .from('news-images')
+      .from(bucket)
       .getPublicUrl(filePath);
 
+    // Return success with data
     return {
+      success: true,
       path: data.path,
       url: publicUrl
     };
-  } catch (error) {
-    console.error('Error uploading file:', error);
-    throw error;
-  }
-};
 
-export const deleteFile = async (filePath) => {
-  try {
-    const { error } = await supabase.storage
-      .from('news-images')
-      .remove([filePath]);
-
-    if (error) throw error;
-    return true;
   } catch (error) {
-    console.error('Error deleting file:', error);
-    throw error;
-  }
-};
-
-export const getFilePreview = (filePath) => {
-  if (!filePath) return null;
-  
-  try {
-    const { data: { publicUrl } } = supabase.storage
-      .from('news-images')
-      .getPublicUrl(filePath);
-      
-    return publicUrl;
-  } catch (error) {
-    console.error('Error getting file preview:', error);
-    return null;
+    // Return a structured error response
+    return {
+      error: error.message || 'An unexpected error occurred',
+      success: false
+    };
   }
 };
 
 export const validateFile = (file, options = {}) => {
-  const {
-    maxSize = 5 * 1024 * 1024, // 5MB default
-    allowedTypes = ['image/jpeg', 'image/png', 'image/webp']
-  } = options;
+  const defaultOptions = {
+    image: {
+      maxSize: 5 * 1024 * 1024, // 5MB
+      allowedTypes: ['image/jpeg', 'image/png', 'image/webp']
+    },
+    video: {
+      maxSize: 50 * 1024 * 1024, // 50MB
+      allowedTypes: ['video/mp4', 'video/webm']
+    }
+  };
 
-  if (!file) return { valid: false, error: 'No file provided' };
+  if (!file) {
+    return { valid: false, error: 'No file provided' };
+  }
+
+  const fileType = file.type.startsWith('image/') ? 'image' : 'video';
+  const { maxSize, allowedTypes } = defaultOptions[fileType];
 
   if (!allowedTypes.includes(file.type)) {
     return { 

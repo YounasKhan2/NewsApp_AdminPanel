@@ -33,6 +33,7 @@ export const useProtectedApi = () => {
       fetch(url, {
         ...options,
         headers: {
+          'Accept': 'application/json',
           ...options.headers,
           Authorization: `Bearer ${user?.access_token}`
         }
@@ -44,6 +45,7 @@ export const useProtectedApi = () => {
         ...options,
         method: 'POST',
         headers: {
+          'Accept': 'application/json',
           'Content-Type': 'application/json',
           ...options.headers,
           Authorization: `Bearer ${user?.access_token}`
@@ -52,51 +54,96 @@ export const useProtectedApi = () => {
       })
     ),
 
-    // Supabase specific methods
     supabase: {
-      getUser: async () => handleResponse(
-        supabase
-          .from('users')
-          .select('*')
-          .eq('id', user?.id)
-          .single()
-      ),
+      getUser: async () => {
+        if (!user?.id) {
+          return { data: null, error: 'No user ID available' };
+        }
 
-      updateUser: async (data) => handleResponse(
-        supabase
+        const { data, error } = await supabase
+          .from('users')
+          .select('id, email, full_name, avatar_url, role, last_login, created_at')
+          .eq('id', user.id)
+          .single();
+
+        if (error && error.code === 'PGRST116') {
+          // User doesn't exist in the users table
+          return { data: null, error: 'User not found' };
+        }
+
+        return { data, error };
+      },
+
+      updateUser: async (data) => {
+        if (!user?.id) {
+          return { data: null, error: 'No user ID available' };
+        }
+
+        return await supabase
           .from('users')
           .update(data)
-          .eq('id', user?.id)
-      ),
+          .eq('id', user.id)
+          .select()
+          .single();
+      },
 
-      getArticles: async (filters = {}) => handleResponse(
-        supabase
+      getArticles: async (filters = {}) => {
+        return await supabase
           .from('articles')
-          .select('*')
-          .match(filters)
-      ),
+          .select(`
+            id,
+            title,
+            content,
+            category,
+            image_url,
+            video_url,
+            author,
+            status,
+            views,
+            created_at,
+            published_at,
+            updated_at
+          `)
+          .match(filters);
+      },
 
-      createArticle: async (data) => handleResponse(
-        supabase
+      createArticle: async (data) => {
+        if (!user?.id) {
+          return { data: null, error: 'No user ID available' };
+        }
+
+        return await supabase
           .from('articles')
-          .insert([{ ...data, user_id: user?.id }])
-      ),
+          .insert([{ ...data, author: user.id }])
+          .select()
+          .single();
+      },
 
-      updateArticle: async (id, data) => handleResponse(
-        supabase
+      updateArticle: async (id, data) => {
+        if (!user?.id) {
+          return { data: null, error: 'No user ID available' };
+        }
+
+        return await supabase
           .from('articles')
           .update(data)
           .eq('id', id)
-          .eq('user_id', user?.id)
-      ),
+          .eq('author', user.id)
+          .select()
+          .single();
+      },
 
-      deleteArticle: async (id) => handleResponse(
-        supabase
+      deleteArticle: async (id) => {
+        if (!user?.id) {
+          return { data: null, error: 'No user ID available' };
+        }
+
+        return await supabase
           .from('articles')
           .delete()
           .eq('id', id)
-          .eq('user_id', user?.id)
-      )
+          .eq('author', user.id);
+      }
     }
   };
 

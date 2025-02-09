@@ -4,8 +4,7 @@ import { newsService, categoryService } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { toast } from "react-hot-toast";
 import { Loader2 } from "lucide-react";
-import { uploadFile, validateFile } from '@/utils/storage';
-import { supabase } from '@/lib/supabase';
+import FileUpload from '@/components/FileUpload'; // Import the FileUpload component
 
 const AddNews = () => {
   const router = useRouter();
@@ -22,19 +21,15 @@ const AddNews = () => {
   });
   
   const [loading, setLoading] = useState(false);
-  const [imagePreview, setImagePreview] = useState(null);
-  const [videoPreview, setVideoPreview] = useState(null);
 
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        console.log('Fetching categories...'); // Debug log
         const categoriesData = await categoryService.getCategories();
-        console.log('Categories received:', categoriesData);
         setCategories(categoriesData);
       } catch (error) {
         console.error('Error fetching categories:', error);
-        toast.error('Failed to load categories. Please try again later.');
+        toast.error('Failed to load categories');
       }
     };
     fetchCategories();
@@ -56,38 +51,24 @@ const AddNews = () => {
     }));
   };
 
-  const handleFileChange = async (e, type) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    // Use the validation function from storage.js
-    const validationResult = validateFile(file, {
-      maxSize: type === 'image' ? 5 * 1024 * 1024 : 50 * 1024 * 1024, // 5MB for images, 50MB for videos
-      allowedTypes: type === 'image' 
-        ? ['image/jpeg', 'image/png', 'image/webp'] 
-        : ['video/mp4', 'video/webm']
-    });
-
-    if (!validationResult.valid) {
-      toast.error(validationResult.error);
-      return;
-    }
-
+  const handleImageUpload = (url, path) => {
     setFormData(prev => ({
       ...prev,
-      [type]: file
+      image: { url, path }
     }));
+    toast.success('Image uploaded successfully');
+  };
 
-    // Generate preview
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      if (type === 'image') {
-        setImagePreview(reader.result);
-      } else {
-        setVideoPreview(reader.result);
-      }
-    };
-    reader.readAsDataURL(file);
+  const handleVideoUpload = (url, path) => {
+    setFormData(prev => ({
+      ...prev,
+      video: { url, path }
+    }));
+    toast.success('Video uploaded successfully');
+  };
+
+  const handleUploadError = (error) => {
+    toast.error(error);
   };
 
   const validateForm = () => {
@@ -120,49 +101,50 @@ const AddNews = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    console.log('Form submitted');
     
-    if (!validateForm()) return;
+    if (!validateForm()) {
+      return;
+    }
     
     setLoading(true);
-    // Show upload starting toast
-    const uploadToast = toast.loading('Uploading media files...');
     
     try {
-      // Upload image and video if present
-      const [imageUpload, videoUpload] = await Promise.all([
-        formData.image ? uploadFile(formData.image, 'news/images') : null,
-        formData.video ? uploadFile(formData.video, 'news/videos') : null
-      ]);
-
-      // Update upload toast
-      toast.loading('Creating article...', { id: uploadToast });
-
-      // Create article in Supabase
+      // Get the current authenticated user
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+  
+      // Prepare article data according to the table schema
+      const articleData = {
+        title: formData.title,
+        content: formData.content,
+        category: formData.category,
+        image_url: formData.image?.url || null,
+        video_url: formData.video?.url || null,
+        author: user.id,  // This maps to the UUID from auth.users
+        status: 'pending',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      
+      console.log('Submitting article data:', articleData);
+  
       const { data, error } = await supabase
         .from('articles')
-        .insert([{
-          title: formData.title,
-          content: formData.content,
-          category: formData.category,
-          image_url: imageUpload?.url || null,
-          image_path: imageUpload?.path || null,
-          video_url: videoUpload?.url || null,
-          video_path: videoUpload?.path || null,
-          mobile_preview_url: formData.mobilePreview || imageUpload?.url || null,
-          tags: formData.tags,
-          summary: formData.summary,
-          status: 'pending',
-          created_at: new Date().toISOString()
-        }])
+        .insert([articleData])
         .select()
         .single();
-
-      if (error) throw error;
-
-      // Success toast
-      toast.success('Article created successfully', { id: uploadToast });
-      
-      // Redirect to manage content
+  
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
+  
+      console.log('Article created successfully:', data);
+      toast.success('Article created successfully');
       router.push('/manage-content');
     } catch (error) {
       console.error('Error creating article:', error);
@@ -275,41 +257,25 @@ const AddNews = () => {
           {/* Image Upload */}
           <div>
             <label className="block text-sm font-medium mb-2">Featured Image</label>
-            <input
-              type="file"
+            <FileUpload
+              onUploadComplete={handleImageUpload}
+              onError={handleUploadError}
+              folder="news/images"
               accept="image/jpeg,image/png,image/webp"
-              onChange={(e) => handleFileChange(e, 'image')}
-              className="w-full p-2 border border-gray-300 rounded-md"
+              maxSize={5 * 1024 * 1024}
             />
-            {imagePreview && (
-              <div className="mt-2">
-                <img
-                  src={imagePreview}
-                  alt="Preview"
-                  className="max-h-40 rounded-md"
-                />
-              </div>
-            )}
           </div>
 
           {/* Video Upload */}
           <div>
             <label className="block text-sm font-medium mb-2">Video</label>
-            <input
-              type="file"
+            <FileUpload
+              onUploadComplete={handleVideoUpload}
+              onError={handleUploadError}
+              folder="news/videos"
               accept="video/mp4,video/webm"
-              onChange={(e) => handleFileChange(e, 'video')}
-              className="w-full p-2 border border-gray-300 rounded-md"
+              maxSize={50 * 1024 * 1024}
             />
-            {videoPreview && (
-              <div className="mt-2">
-                <video
-                  src={videoPreview}
-                  controls
-                  className="max-h-40 rounded-md"
-                />
-              </div>
-            )}
           </div>
         </div>
 

@@ -56,6 +56,7 @@ export default function Home() {
         return <ManageContent />;
       case "settings":
         return <ProfileSettings />;
+      case "register":
       default:
         return <Dashboard />;
     }

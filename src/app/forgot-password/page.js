@@ -40,7 +40,7 @@ const ForgotPassword = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen flex items-center justify-center bg-gray-100 py-12 px-4 sm:px-6 lg:px-8 text-black">
       <div className="max-w-md w-full bg-white rounded-lg shadow-md overflow-hidden">
         {/* Header */}
         <div className="px-8 pt-8 pb-6 text-center">

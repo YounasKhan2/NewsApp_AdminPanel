@@ -68,8 +68,8 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full bg-white rounded-lg shadow-md overflow-hidden">
+    <div className="min-h-screen flex items-center justify-center bg-gray-100 py-12 px-4 sm:px-6 lg:px-8 text-black">
+      <div className="max-w-md w-full bg-white rounded-lg shadow-md overflow-hidden text-black">
         {/* Login Header */}
         <div className="px-8 pt-8 pb-6 text-center">
           <h2 className="text-3xl font-bold text-gray-900 mb-2">
@@ -105,7 +105,7 @@ const Login = () => {
                 required
                 value={formData.email}
                 onChange={handleChange}
-                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-black"
                 placeholder="you@example.com"
               />
             </div>

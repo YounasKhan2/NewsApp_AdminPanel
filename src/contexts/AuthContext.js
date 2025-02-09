@@ -1,4 +1,3 @@
-// contexts/AuthContext.js
 'use client'
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
@@ -15,7 +14,6 @@ export const AuthProvider = ({ children }) => {
   const [userRole, setUserRole] = useState(null);
 
   useEffect(() => {
-    // Check active sessions and sets the user
     const checkUser = async () => {
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
@@ -23,14 +21,24 @@ export const AuthProvider = ({ children }) => {
 
         if (session?.user) {
           setUser(session.user);
-          const { data: profile } = await supabase
-            .from('users')
-            .select('role')
-            .eq('id', session.user.id)
-            .single();
-          
-          if (profile) {
-            setUserRole(profile.role);
+          try {
+            const { data, error: roleError } = await supabase
+              .from('users')
+              .select('role')
+              .eq('id', session.user.id)
+              .limit(1)
+              .maybeSingle();
+
+            if (roleError) {
+              console.error('Error fetching role:', roleError);
+              return;
+            }
+
+            if (data) {
+              setUserRole(data.role);
+            }
+          } catch (roleError) {
+            console.error('Role fetch error:', roleError);
           }
         }
       } catch (error) {
@@ -42,24 +50,34 @@ export const AuthProvider = ({ children }) => {
 
     checkUser();
 
-    // Listen for changes in auth state
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       setUser(session?.user || null);
-      setLoading(false);
-
+      
       if (session?.user) {
-        const { data: profile } = await supabase
-          .from('users')
-          .select('role')
-          .eq('id', session.user.id)
-          .single();
-        
-        if (profile) {
-          setUserRole(profile.role);
+        try {
+          const { data, error: roleError } = await supabase
+            .from('users')
+            .select('role')
+            .eq('id', session.user.id)
+            .limit(1)
+            .maybeSingle();
+
+          if (roleError) {
+            console.error('Error fetching role:', roleError);
+            return;
+          }
+
+          if (data) {
+            setUserRole(data.role);
+          }
+        } catch (roleError) {
+          console.error('Role fetch error:', roleError);
         }
       } else {
         setUserRole(null);
       }
+      
+      setLoading(false);
     });
 
     return () => {

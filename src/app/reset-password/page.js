@@ -1,8 +1,12 @@
-import React, { useState } from "react";
-import { supabase } from "./supabase";
+'use client'
+import React, { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
 import { Lock, Eye, EyeOff, AlertCircle, RefreshCw, CheckCircle } from "lucide-react";
+import { useSearchParams } from 'next/navigation';
 
 const ResetPassword = () => {
+  const searchParams = useSearchParams();
+  
   const [formData, setFormData] = useState({
     password: "",
     confirmPassword: ""
@@ -12,6 +16,21 @@ const ResetPassword = () => {
   const [success, setSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  // Get the access token from URL
+  useEffect(() => {
+    // When the recovery link is clicked, Supabase auth will set the access_token in the URL
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    const access_token = hashParams.get('access_token');
+    
+    if (access_token) {
+      // Set the session using the access token
+      supabase.auth.setSession({
+        access_token,
+        refresh_token: null,
+      });
+    }
+  }, []);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -63,7 +82,7 @@ const ResetPassword = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen flex items-center justify-center bg-gray-100 py-12 px-4 sm:px-6 lg:px-8 text-black">
       <div className="max-w-md w-full bg-white rounded-lg shadow-md overflow-hidden">
         {/* Header */}
         <div className="px-8 pt-8 pb-6 text-center">

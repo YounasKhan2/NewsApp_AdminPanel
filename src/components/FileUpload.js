@@ -1,13 +1,15 @@
+'use client';
+
 import React, { useState, useCallback } from 'react';
 import { uploadFile, validateFile } from '@/utils/storage';
-import { Upload, X, RefreshCw, Image as ImageIcon } from 'lucide-react';
+import { Upload, X, RefreshCw } from 'lucide-react';
 
 const FileUpload = ({
   onUploadComplete,
   onError,
   folder = 'news',
   accept = "image/*",
-  maxSize = 5 * 1024 * 1024, // 5MB
+  maxSize = 5 * 1024 * 1024,
   className = ""
 }) => {
   const [uploading, setUploading] = useState(false);
@@ -33,12 +35,17 @@ const FileUpload = ({
       setPreview(objectUrl);
 
       // Upload to Supabase
-      const { url, path } = await uploadFile(file, folder);
-      onUploadComplete?.(url, path);
+      const result = await uploadFile(file, folder);
+      
+      if (!result.success) {
+        throw new Error(result.error);
+      }
+
+      onUploadComplete?.(result.url, result.path);
 
     } catch (error) {
-      console.error('Upload error:', error);
-      onError?.(error.message);
+      console.warn('Upload error:', error);
+      onError?.(error.message || 'Error uploading file');
       setPreview(null);
     } finally {
       setUploading(false);
