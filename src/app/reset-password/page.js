@@ -17,19 +17,45 @@ const ResetPassword = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  // Get the access token from URL
+  // Get the access token from URL and set up session
   useEffect(() => {
-    // When the recovery link is clicked, Supabase auth will set the access_token in the URL
-    const hashParams = new URLSearchParams(window.location.hash.substring(1));
-    const access_token = hashParams.get('access_token');
-    
-    if (access_token) {
-      // Set the session using the access token
-      supabase.auth.setSession({
-        access_token,
-        refresh_token: null,
-      });
-    }
+    const initializeSession = async () => {
+      try {
+        // First check if we already have a session
+        const { data: { session: existingSession } } = await supabase.auth.getSession();
+        
+        if (existingSession) {
+          return; // We already have a valid session
+        }
+
+        // If no session, try to get it from the URL
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        const access_token = hashParams.get('access_token');
+        const refresh_token = hashParams.get('refresh_token');
+        const type = hashParams.get('type');
+
+        if (!access_token || type !== 'recovery') {
+          setError('Invalid recovery link. Please request a new password reset link.');
+          return;
+        }
+
+        // Set the session
+        const { error: sessionError } = await supabase.auth.setSession({
+          access_token,
+          refresh_token,
+        });
+
+        if (sessionError) {
+          throw sessionError;
+        }
+
+      } catch (err) {
+        console.error('Session initialization error:', err);
+        setError('Failed to initialize session. Please try requesting a new password reset link.');
+      }
+    };
+
+    initializeSession();
   }, []);
 
   const handleChange = (e) => {
@@ -62,25 +88,46 @@ const ResetPassword = () => {
     
     if (!validateForm()) return;
 
-    try {
-      setLoading(true);
-      setError(null);
+    setLoading(true);
+    setError(null);
 
-      const { error: resetError } = await supabase.auth.updateUser({
+    try {
+      console.log('Starting password reset...'); // Debug log
+
+      // Verify session before updating password
+      const { data: { session } } = await supabase.auth.getSession();
+      console.log('Session check:', !!session); // Debug log
+      
+      if (!session) {
+        console.log('No session found'); // Debug log
+        setError('No active session. Please try requesting a new password reset link.');
+        return;
+      }
+
+      const { error: updateError } = await supabase.auth.updateUser({
         password: formData.password
       });
 
-      if (resetError) throw resetError;
+      console.log('Update attempted, error:', updateError); // Debug log
 
+      if (updateError) {
+        console.log('Update error:', updateError); // Debug log
+        setError(updateError.message || 'Failed to reset password');
+        return;
+      }
+
+      console.log('Password update successful'); // Debug log
       setSuccess(true);
+      
     } catch (err) {
       console.error('Password reset error:', err);
-      setError(err.message || 'Failed to reset password');
+      setError(err.message || 'Failed to reset password. Please try again.');
     } finally {
+      console.log('Resetting loading state'); // Debug log
       setLoading(false);
     }
-  };
-
+};
+  // Rest of your component (the return/JSX part) stays exactly the same
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100 py-12 px-4 sm:px-6 lg:px-8 text-black">
       <div className="max-w-md w-full bg-white rounded-lg shadow-md overflow-hidden">

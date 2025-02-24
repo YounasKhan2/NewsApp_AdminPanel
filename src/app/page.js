@@ -1,6 +1,7 @@
-"use client";
+'use client';
+
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import Sidebar from "@/components/Sidebar";
 import Dashboard from "@/components/Dashboard";
@@ -15,6 +16,7 @@ export default function Home() {
   const [activePage, setActivePage] = useState("dashboard");
   const { user, loading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -24,6 +26,14 @@ export default function Home() {
     };
     checkAuth();
   }, [user, loading, router]);
+
+  // Set active page based on pathname
+  useEffect(() => {
+    if (pathname === '/dashboard') {
+      setActivePage('dashboard');
+    }
+    // Add other route checks if needed
+  }, [pathname]);
 
   // Show loading state
   if (loading) {
@@ -56,7 +66,6 @@ export default function Home() {
         return <ManageContent />;
       case "settings":
         return <ProfileSettings />;
-      case "register":
       default:
         return <Dashboard />;
     }

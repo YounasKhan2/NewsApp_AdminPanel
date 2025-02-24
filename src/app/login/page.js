@@ -1,8 +1,9 @@
 'use client'
 import React, { useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { Eye, EyeOff, Mail, Lock, AlertCircle,RefreshCw } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, AlertCircle, RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
+
 const Login = () => {
   const router = useRouter(); 
   const [formData, setFormData] = useState({
@@ -19,11 +20,10 @@ const Login = () => {
       ...prev,
       [name]: value
     }));
-    // Clear error when user starts typing
     if (error) setError(null);
   };
 
-  const handleEmailLogin = async (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     try {
       setLoading(true);
@@ -34,9 +34,14 @@ const Login = () => {
         password: formData.password,
       });
 
-      if (signInError) throw signInError;
+      if (signInError) {
+        // Custom error message for invalid credentials
+        if (signInError.message.includes('Invalid login credentials')) {
+          throw new Error('Access denied. Please contact your administrator for access.');
+        }
+        throw signInError;
+      }
 
-      // Redirect to dashboard on successful login
       router.push('/dashboard');
     } catch (err) {
       console.error('Login error:', err);
@@ -46,41 +51,18 @@ const Login = () => {
     }
   };
 
-  const handleGoogleLogin = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const { data, error: googleError } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin
-        }
-      });
-
-      if (googleError) throw googleError;
-    } catch (err) {
-      console.error('Google login error:', err);
-      setError(err.message || 'Failed to sign in with Google');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100 py-12 px-4 sm:px-6 lg:px-8 text-black">
       <div className="max-w-md w-full bg-white rounded-lg shadow-md overflow-hidden text-black">
-        {/* Login Header */}
         <div className="px-8 pt-8 pb-6 text-center">
           <h2 className="text-3xl font-bold text-gray-900 mb-2">
-            Welcome Back
+            Admin Login
           </h2>
           <p className="text-sm text-gray-600">
             Sign in to access your admin dashboard
           </p>
         </div>
 
-        {/* Error Display */}
         {error && (
           <div className="mx-8 mb-4 p-4 bg-red-50 border border-red-200 rounded-md flex items-center gap-2 text-red-700">
             <AlertCircle className="h-5 w-5" />
@@ -88,9 +70,7 @@ const Login = () => {
           </div>
         )}
 
-        {/* Login Form */}
-        <form onSubmit={handleEmailLogin} className="px-8 pb-8 space-y-6">
-          {/* Email Input */}
+        <form onSubmit={handleLogin} className="px-8 pb-8 space-y-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Email Address
@@ -111,7 +91,6 @@ const Login = () => {
             </div>
           </div>
 
-          {/* Password Input */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Password
@@ -143,7 +122,6 @@ const Login = () => {
             </div>
           </div>
 
-          {/* Remember Me & Forgot Password */}
           <div className="flex items-center justify-between">
             <div className="flex items-center">
               <input
@@ -163,7 +141,6 @@ const Login = () => {
             </a>
           </div>
 
-          {/* Submit Button */}
           <button
             type="submit"
             disabled={loading}
@@ -175,39 +152,6 @@ const Login = () => {
               'Sign In'
             )}
           </button>
-
-          {/* Divider */}
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-300" />
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-white text-gray-500">Or continue with</span>
-            </div>
-          </div>
-
-          {/* Google Sign In */}
-          <button
-            type="button"
-            onClick={handleGoogleLogin}
-            disabled={loading}
-            className="w-full flex items-center justify-center gap-3 px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-          >
-            <img
-              src="/api/placeholder/20/20"
-              alt="Google"
-              className="w-5 h-5"
-            />
-            Sign in with Google
-          </button>
-
-          {/* Sign Up Link */}
-          <p className="text-center text-sm text-gray-600">
-            Don't have an account?{" "}
-            <a href="/signup" className="font-medium text-blue-600 hover:text-blue-500">
-              Sign up here
-            </a>
-          </p>
         </form>
       </div>
     </div>
